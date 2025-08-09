@@ -125,21 +125,29 @@ function setupSheetFormatting(sheet, headersArray, columnWidthsArray, applyBandi
       const rangeForBanding = sheet.getRange(1, 1, bandingTotalRows, effectiveHeaderCount);
       
       try {
-        // It's already been cleared comprehensively above, so direct apply.
-        // No, still clear bandings directly on THE sheet object before applying to a range
         const existingBandingsOnSheet = sheet.getBandings();
         for (let i = 0; i < existingBandingsOnSheet.length; i++) {
             existingBandingsOnSheet[i].remove();
         }
-        Logger.log(`[${FUNC_NAME} INFO] Cleared ALL existing bandings on sheet "${sheet.getName()}". Attempting new banding on ${rangeForBanding.getA1Notation()}`);
+        Logger.log(`[${FUNC_NAME} INFO] Cleared ALL existing bandings on sheet "${sheet.getName()}".`);
         
-        const themeToApply = bandingThemeEnum || SpreadsheetApp.BandingTheme.LIGHT_GREY; 
-        const banding = rangeForBanding.applyRowBanding(themeToApply, true, false); // Header row true, footer false
+        const banding = rangeForBanding.applyRowBanding();
+
+        // If the sheet is the Proposals sheet, apply custom pink banding. Otherwise, use the theme.
+        if (sheet.getName() === PROPOSAL_TRACKER_SHEET_TAB_NAME) {
+            banding.setHeaderRowColor(BRAND_COLORS.LAPIS_LAZULI) 
+                  .setFirstRowColor(BRAND_COLORS.PALE_ORANGE) // This is the softer, pastel champagne/orange
+                  .setSecondRowColor(BRAND_COLORS.WHITE);
+            Logger.log(`[${FUNC_NAME} INFO] Custom PINK banding applied to "${sheet.getName()}".`);
+        } else {
+            const themeToApply = bandingThemeEnum || SpreadsheetApp.BandingTheme.LIGHT_GREY;
+            banding.setRowBandingTheme(themeToApply);
+            Logger.log(`[${FUNC_NAME} INFO] Banding with theme "${themeToApply.toString()}" applied to sheet "${sheet.getName()}".`);
+        }
         
-        Logger.log(`[${FUNC_NAME} INFO] Banding with theme "${themeToApply.toString()}" applied to sheet "${sheet.getName()}", range: ${rangeForBanding.getA1Notation()}.`);
-      } catch (eBanding) {
-        Logger.log(`[${FUNC_NAME} WARN] BANDING ATTEMPT FAILED on sheet "${sheet.getName()}": ${eBanding.toString()}. Range: ${rangeForBanding.getA1Notation()}. Theme: ${bandingThemeEnum ? bandingThemeEnum.toString() : 'Default'}`);
-      }
+    } catch (eBanding) {
+        Logger.log(`[${FUNC_NAME} WARN] BANDING ATTEMPT FAILED on sheet "${sheet.getName()}": ${eBanding.toString()}.`);
+    }
     }
 
     // --- 6. Delete Extra Columns ---
@@ -215,16 +223,16 @@ function _writeErrorToSheet(sheet, errorInfo) {
     try {
         let errorRow = [];
         // Use the moduleName to determine which sheet's headers to use for formatting
-        if (errorInfo.moduleName === "Application Tracker") {
-            errorRow = new Array(APP_TRACKER_SHEET_HEADERS.length).fill("");
-            errorRow[PROCESSED_TIMESTAMP_COL - 1] = new Date();
-            errorRow[COMPANY_COL - 1] = `ERROR: ${errorInfo.errorType}`;
-            errorRow[JOB_TITLE_COL - 1] = "See Notes";
-            errorRow[STATUS_COL - 1] = MANUAL_REVIEW_NEEDED;
-            errorRow[NOTES_COL - 1] = String(errorInfo.details).substring(0, 500);
-            errorRow[EMAIL_SUBJECT_COL - 1] = errorInfo.messageSubject;
-            errorRow[EMAIL_ID_COL - 1] = errorInfo.messageId;
-        } else if (errorInfo.moduleName === "Job Leads Tracker") {
+        if (errorInfo.moduleName === "Proposal Tracker") {
+            errorRow = new Array(PROPOSAL_TRACKER_SHEET_HEADERS.length).fill("");
+            errorRow[PROP_PROC_TS_COL - 1] = new Date();
+            errorRow[PROP_FUNDER_COL - 1] = `ERROR: ${errorInfo.errorType}`;
+            errorRow[PROP_TITLE_COL - 1] = "See Notes";
+            errorRow[PROP_STATUS_COL - 1] = MANUAL_REVIEW_NEEDED;
+            errorRow[PROP_NOTES_COL - 1] = String(errorInfo.details).substring(0, 500);
+            errorRow[PROP_EMAIL_SUBJ_COL - 1] = errorInfo.messageSubject;
+            errorRow[PROP_EMAIL_ID_COL - 1] = errorInfo.messageId;
+        } else if (errorInfo.moduleName === "Job Leads Tracker") { // This can be adapted for the "Opportunities" module in the future
             errorRow = new Array(LEADS_SHEET_HEADERS.length).fill("");
             errorRow[LEADS_DATE_ADDED_COL - 1] = new Date();
             errorRow[LEADS_COMPANY_COL - 1] = `ERROR: ${errorInfo.errorType}`;
