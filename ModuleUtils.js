@@ -90,40 +90,27 @@ function _setupModule(config) {
     }
   }
 
-  // --- C. Add Dummy Data ---
-  let dummyRows = []; // To scope it for removal block
-  if (moduleSuccess && dataSh && dataSh.getLastRow() <= 1) { // Only if sheet is truly empty (just header)
+// START SNIPPET 6A: Replace the dummy data line in ModuleUtils.js
+if (moduleSuccess && dataSh && dataSh.getLastRow() <= 1) {
     Logger.log(`[${FUNC_NAME} INFO] Adding dummy data to "${config.sheetTabName}".`);
     try {
-      const today = new Date();
-      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const twoWeeksAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
-      dummyRows = [ // Assign to the outer scoped variable
-        [new Date(), twoWeeksAgo, "LinkedIn", "DemoCorp Alpha", "Software Intern", DEFAULT_STATUS, DEFAULT_STATUS, twoWeeksAgo, "Applied to Alpha", "https://example.com/alpha", "dummyMsgIdAlpha", "Initial notes for Alpha"],
-        [new Date(), weekAgo, "Indeed", "Test Inc. Beta", "QA Analyst", INTERVIEW_STATUS, INTERVIEW_STATUS, weekAgo, "Interview Scheduled for Beta", "https://example.com/beta", "dummyMsgIdBeta", "Follow up after Beta interview"]
-        // Add a third dummy row if needed for chart variety
-      ];
-      dummyRows = dummyRows.map(r => {
-        while (r.length < TOTAL_COLUMNS_IN_APP_SHEET) r.push(""); return r.slice(0, TOTAL_COLUMNS_IN_APP_SHEET);
-      });
-      dataSh.getRange(2, 1, dummyRows.length, TOTAL_COLUMNS_IN_APP_SHEET).setValues(dummyRows);
-      dummyDataWasAdded = true; messages.push(`Dummy data added (${dummyRows.length} rows).`);
-    } catch (e) { Logger.log(`[${FUNC_NAME} WARN] Failed adding dummy data: ${e.message}`); messages.push("Dummy data add FAILED."); }
-  }
-
-
-  // --- E. Remove Dummy Data ---
-  if (moduleSuccess && dummyDataWasAdded && dataSh && dummyRows.length > 0) {
-    Logger.log(`[${FUNC_NAME} INFO] Removing dummy data (${dummyRows.length} rows)...`);
-    try {
-      if (dataSh.getLastRow() >= (1 + dummyRows.length)) { // Check if enough rows exist to delete
-        dataSh.deleteRows(2, dummyRows.length);
-        messages.push("Dummy data removed.");
-      } else {
-        Logger.log(`[${FUNC_NAME} WARN] Not enough rows to delete all dummy data as expected. Sheet lastRow: ${dataSh.getLastRow()}, Dummy rows: ${dummyRows.length}`);
-      }
-    } catch (e) { Logger.log(`[${FUNC_NAME} WARN] Failed removing dummy data: ${e.message}`); }
-  }
+        const today = new Date();
+        const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const dummyRows = [
+            [new Date(), weekAgo, "Demo Foundation", "Community Arts Project", STATUS_SUBMITTED, STATUS_SUBMITTED, weekAgo, 5000, 0, "Initial Submission", "http://example.com", "dummy1", "Notes here"],
+            [new Date(), today, "Tech Grant Initiative", "STEM Education Program", STATUS_UNDER_REVIEW, STATUS_UNDER_REVIEW, today, 25000, 0, "Follow-up Email", "http://example.com", "dummy2", "Pending response"]
+        ];
+        const sizedDummyRows = dummyRows.map(r => {
+            while (r.length < config.sheetHeaders.length) r.push("");
+            return r.slice(0, config.sheetHeaders.length);
+        });
+        dataSh.getRange(2, 1, sizedDummyRows.length, sizedDummyRows[0].length).setValues(sizedDummyRows);
+        messages.push(`Dummy data added for dashboard priming.`);
+    } catch (e) {
+        Logger.log(`[${FUNC_NAME} WARN] Failed adding dummy data: ${e.message}`);
+    }
+}
+// END SNIPPET 6A
 
   // --- F. Trigger Verification/Creation ---
   if (moduleSuccess) {
@@ -132,8 +119,8 @@ function _setupModule(config) {
       if (createTimeDrivenTrigger(config.triggerFunctionName, config.triggerIntervalHours)) messages.push(`Trigger '${config.triggerFunctionName}': CREATED.`);
       else messages.push(`Trigger '${config.triggerFunctionName}': Exists/Verified.`);
       if (config.staleRejectFunctionName) {
-        if (createOrVerifyStaleRejectTrigger(config.staleRejectFunctionName, 2)) messages.push(`Trigger '${config.staleRejectFunctionName}': CREATED.`);
-        else messages.push(`Trigger '${config.staleRejectFunctionName}': Exists/Verified.`);
+        if (createOrVerifyStaleProposalTrigger()) messages.push(`Trigger 'markStaleProposals': CREATED.`);
+        else messages.push(`Trigger 'markStaleProposals': Exists/Verified.`);
       }
     } catch (e) {
       Logger.log(`[${FUNC_NAME} ERROR] Trigger setup failed: ${e.toString()}`);
