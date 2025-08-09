@@ -1,15 +1,7 @@
 /**
- * @file Contains functions for creating, verifying, and managing
- * time-driven triggers for the project.
+ * @file Manages time-driven triggers for the project.
  */
 
-/**
- * Creates or verifies a time-based trigger for a given function.
- * It checks for the trigger's existence to avoid creating duplicates.
- * @param {string} functionName The name of the function to trigger.
- * @param {number} hours The interval in hours.
- * @returns {boolean} True if a new trigger was created, false if it already existed.
- */
 function createTimeDrivenTrigger(functionName, hours) {
   const FUNC_NAME = `createTimeDrivenTrigger for ${functionName}`;
   try {
@@ -17,11 +9,21 @@ function createTimeDrivenTrigger(functionName, hours) {
     const triggerExists = existingTriggers.some(t => t.getHandlerFunction() === functionName);
 
     if (!triggerExists) {
-      ScriptApp.newTrigger(functionName)
-        .timeBased()
-        .everyHours(hours)
-        .create();
-      Logger.log(`[${FUNC_NAME} INFO] Trigger CREATED successfully.`);
+        if (functionName === 'processEmails_triggerHandler') {
+            ScriptApp.newTrigger(functionName)
+                .timeBased()
+                .everyDays(1) // CHANGED: Runs once per day
+                .atHour(1)    // Around 1 AM in the server's timezone
+                .create();
+            Logger.log(`[${FUNC_NAME} INFO] Daily email processing trigger CREATED successfully.`);
+        } else {
+             // Fallback for other potential triggers if needed in the future
+            ScriptApp.newTrigger(functionName)
+                .timeBased()
+                .everyHours(hours)
+                .create();
+            Logger.log(`[${FUNC_NAME} INFO] Hourly trigger CREATED successfully for ${functionName}.`);
+        }
       return true;
     } else {
       Logger.log(`[${FUNC_NAME} INFO] Trigger ALREADY EXISTS.`);
@@ -33,13 +35,9 @@ function createTimeDrivenTrigger(functionName, hours) {
   }
 }
 
-/**
- * Creates or verifies a daily time-based trigger for marking stale applications.
- * @returns {boolean} True if a new trigger was created, false if it already existed.
- */
-function createOrVerifyStaleRejectTrigger() {
-  const FUNC_NAME = 'createOrVerifyStaleRejectTrigger';
-  const HANDLER_FUNCTION = 'markStaleApplicationsAsRejected';
+function createOrVerifyStaleProposalTrigger() {
+  const FUNC_NAME = 'createOrVerifyStaleProposalTrigger';
+  const HANDLER_FUNCTION = 'markStaleProposals';
   try {
     const existingTriggers = ScriptApp.getProjectTriggers();
     const triggerExists = existingTriggers.some(t => t.getHandlerFunction() === HANDLER_FUNCTION);
@@ -47,17 +45,18 @@ function createOrVerifyStaleRejectTrigger() {
     if (!triggerExists) {
       ScriptApp.newTrigger(HANDLER_FUNCTION)
         .timeBased()
-        .everyDays(1)
-        .atHour(2) // Runs around 2 AM in the script's timezone
+        .everyWeeks(1) // CHANGED: Runs once per week
+        .onWeekDay(ScriptApp.WeekDay.SUNDAY) // Runs on Sunday
+        .atHour(2) // Around 2 AM
         .create();
-      Logger.log(`[${FUNC_NAME} INFO] Daily stale-check trigger CREATED successfully.`);
+      Logger.log(`[${FUNC_NAME} INFO] Weekly stale-check trigger for proposals CREATED.`);
       return true;
     } else {
-      Logger.log(`[${FUNC_NAME} INFO] Daily stale-check trigger ALREADY EXISTS.`);
+      Logger.log(`[${FUNC_NAME} INFO] Weekly stale-check trigger for proposals ALREADY EXISTS.`);
       return false;
     }
   } catch (e) {
-    Logger.log(`[${FUNC_NAME} ERROR] Failed to create or verify stale-check trigger: ${e.message}`);
+    Logger.log(`[${FUNC_NAME} ERROR] Failed to create trigger: ${e.message}`);
     return false;
   }
 }
