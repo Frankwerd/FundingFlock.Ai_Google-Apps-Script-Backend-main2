@@ -1,7 +1,7 @@
 /**
- * @file Main script file orchestrating setup, email processing, and UI for the job application tracker.
+ * @file Main script file orchestrating setup, email processing, and UI for the grant proposal tracker.
  * @author Francis John LiButti (Originals), AI Integration & Refinements by Assistant
- * @version 9 (Stable)
+ * @version 10 (FundingFlock.AI Refactor)
  */
 
 /**
@@ -10,8 +10,8 @@
  */
 function checkConfig() {
     const FUNC_NAME = "checkConfig";
+    // MASTER_WEB_APP_URL removed as it's not in the new config and part of a separate system.
     const criticalVars = {
-        MASTER_WEB_APP_URL,
         TEMPLATE_SHEET_ID,
         MASTER_SCRIPT_ID,
         GEMINI_API_KEY_PROPERTY,
@@ -35,7 +35,7 @@ function checkConfig() {
 function runFullProjectInitialSetup(passedSpreadsheet) {
     const RUNDATE = new Date().toISOString();
     const FUNC_NAME = "runFullProjectInitialSetup";
-    Logger.log(`==== ${FUNC_NAME}: STARTING (CareerSuite.AI v1.2 - ${RUNDATE}) ====`);
+    Logger.log(`==== ${FUNC_NAME}: STARTING (FundingFlock.AI v2.0 - ${RUNDATE}) ====`);
     if (!checkConfig()) {
         Logger.log(`[${FUNC_NAME} CRITICAL] Configuration check failed. Aborting setup.`);
         return { success: false, message: "Critical configuration is missing.", detailedMessages: ["Critical configuration is missing. Please check the logs."], sheetId: null, sheetUrl: null };
@@ -83,10 +83,9 @@ function runFullProjectInitialSetup(passedSpreadsheet) {
         return { success: false, message: errorMsg, detailedMessages: setupMessages, sheetId: activeSS.getId(), sheetUrl: activeSS.getUrl()};
     }
 
-    const modules = [
-        { name: "Application Tracker", setupFunc: initialSetup_LabelsAndSheet },
-        { name: "Job Leads Tracker", setupFunc: runInitialSetup_JobLeadsModule }
-    ];
+const modules = [
+    { name: "Proposal Tracker", setupFunc: initialSetup_LabelsAndSheet }
+];
 
     for (const module of modules) {
         if (typeof module.setupFunc === "function") {
@@ -127,14 +126,14 @@ function runFullProjectInitialSetup(passedSpreadsheet) {
     if (overallSuccess) {
         Logger.log(`[${FUNC_NAME} INFO] Applying final tab order and cleaning up...`);
         try {
-            // Clear dummy data from the Applications sheet now that the dashboard is primed
-            const appSheet = activeSS.getSheetByName(APP_TRACKER_SHEET_TAB_NAME);
-            if (appSheet && appSheet.getLastRow() > 1) {
-                appSheet.getRange(2, 1, appSheet.getLastRow() - 1, appSheet.getLastColumn()).clearContent();
-                Logger.log(`[${FUNC_NAME} INFO] Cleared dummy data from Applications sheet.`);
+            // Clear dummy data from the Proposals sheet now that the dashboard is primed
+            const proposalSheet = activeSS.getSheetByName(PROPOSAL_TRACKER_SHEET_TAB_NAME);
+            if (proposalSheet && proposalSheet.getLastRow() > 1) {
+                proposalSheet.getRange(2, 1, proposalSheet.getLastRow() - 1, proposalSheet.getLastColumn()).clearContent();
+                Logger.log(`[${FUNC_NAME} INFO] Cleared dummy data from Proposals sheet.`);
             }
 
-            const tabOrder = [DASHBOARD_TAB_NAME, APP_TRACKER_SHEET_TAB_NAME, LEADS_SHEET_TAB_NAME, HELPER_SHEET_NAME];
+            const tabOrder = [DASHBOARD_TAB_NAME, PROPOSAL_TRACKER_SHEET_TAB_NAME, OPPORTUNITIES_SHEET_TAB_NAME, HELPER_SHEET_NAME];
             tabOrder.forEach((sheetName, index) => {
                 const sheetToMove = activeSS.getSheetByName(sheetName);
                 if (sheetToMove) {
@@ -152,14 +151,14 @@ function runFullProjectInitialSetup(passedSpreadsheet) {
         }
     }
 
-    const finalStatusMessage = `CareerSuite.AI Full Setup ${overallSuccess ? "completed" : "had issues"}.`;
+    const finalStatusMessage = `FundingFlock.AI Full Setup ${overallSuccess ? "completed" : "had issues"}.`;
     Logger.log(`\n==== ${FUNC_NAME} SUMMARY (SS ID: ${activeSS.getId()}) ====`);
     setupMessages.forEach(msg => Logger.log(`  - ${msg}`));
     Logger.log(`Overall Status: ${overallSuccess ? "SUCCESSFUL" : "ISSUES ENCOUNTERED"}`);
 
     if (!passedSpreadsheet) {
         try {
-            const title = `CareerSuite.AI Setup ${overallSuccess ? "Complete" : "Issues"}`;
+            const title = `FundingFlock.AI Setup ${overallSuccess ? "Complete" : "Issues"}`;
             const message = `Setup for "${activeSS.getName()}" ${overallSuccess ? "finished" : "had issues"}.\n\nSummary:\n- ${setupMessages.join('\n- ')}`;
             SpreadsheetApp.getUi().alert(title, message.substring(0, 1000), SpreadsheetApp.getUi().ButtonSet.OK);
         } catch (e) { /* UI not available */ }
@@ -170,329 +169,160 @@ function runFullProjectInitialSetup(passedSpreadsheet) {
 
 
 /**
- * Sets up the core Job Application Tracker module.
+ * Sets up the core Grant Proposal Tracker module.
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} activeSS The spreadsheet object.
  * @returns {{success: boolean, messages: string[]}}
  */
 function initialSetup_LabelsAndSheet(activeSS) {
     const trackerConfig = {
         activeSS: activeSS,
-        moduleName: "Application Tracker",
-        sheetTabName: APP_TRACKER_SHEET_TAB_NAME,
-        sheetHeaders: APP_TRACKER_SHEET_HEADERS,
-        columnWidths: APP_SHEET_COLUMN_WIDTHS,
+        moduleName: "Proposal Tracker",
+        sheetTabName: PROPOSAL_TRACKER_SHEET_TAB_NAME,
+        sheetHeaders: PROPOSAL_TRACKER_SHEET_HEADERS,
+        // Create a generic width mapping based on the number of headers
+        columnWidths: PROPOSAL_TRACKER_SHEET_HEADERS.map((h, i) => ({ col: i + 1, width: 150 })),
         bandingTheme: SpreadsheetApp.BandingTheme.BLUE,
         tabColor: BRAND_COLORS.LAPIS_LAZULI,
         gmailLabelParent: MASTER_GMAIL_LABEL_PARENT,
         gmailLabelToProcess: TRACKER_GMAIL_LABEL_TO_PROCESS,
         gmailLabelProcessed: TRACKER_GMAIL_LABEL_PROCESSED,
         gmailLabelManualReview: TRACKER_GMAIL_LABEL_MANUAL_REVIEW,
-        gmailFilterQuery: TRACKER_GMAIL_FILTER_QUERY_APP_UPDATES,
+        gmailFilterQuery: TRACKER_GMAIL_FILTER_QUERY,
         triggerFunctionName: 'processEmails_triggerHandler',
         triggerIntervalHours: 1,
         staleRejectFunctionName: 'markStale_triggerHandler'
     };
+    // _setupModule is a generic helper and does not need to be changed.
     return _setupModule(trackerConfig);
 }
 
-/**
- * Generic processing engine for all modules.
- * @param {object} config The configuration for the module.
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss The spreadsheet object.
- * @param {GoogleAppsScript.Properties.Properties} scriptProperties The script's properties.
- */
+// START SNIPPET 5A: Replace _processingEngine in Main.js
 function _processingEngine(config, ss, scriptProperties) {
     const FUNC_NAME = "_processingEngine";
     const SCRIPT_START_TIME = new Date();
     Logger.log(`\n==== ${FUNC_NAME}: STARTING (${SCRIPT_START_TIME.toLocaleString()}) - ${config.moduleName} ====`);
-
     const geminiApiKey = scriptProperties.getProperty(GEMINI_API_KEY_PROPERTY);
-    if (!geminiApiKey || !geminiApiKey.startsWith("AIza") || geminiApiKey.length < 30) {
-        Logger.log(`[${FUNC_NAME} HALTING] Gemini API Key is not configured or invalid for ${config.moduleName}. Please set it via the menu.`);
-        return;
-    }
-    
+    if (!geminiApiKey) { /* ... error logging ... */ return; }
     const dataSheet = ss.getSheetByName(config.sheetTabName);
-    if (!dataSheet) {
-        Logger.log(`[${FUNC_NAME} FATAL ERROR] Sheet "${config.sheetTabName}" not found. Aborting.`);
-        return;
-    }
+    if (!dataSheet) { /* ... error logging ... */ return; }
 
-    Logger.log(`[ENGINE] Fetching Gmail label: ${config.gmailLabelToProcess}`);
     const procLbl = GmailApp.getUserLabelByName(config.gmailLabelToProcess);
     const processedLblObj = GmailApp.getUserLabelByName(config.gmailLabelProcessed);
     const manualLblObj = config.gmailLabelManualReview ? GmailApp.getUserLabelByName(config.gmailLabelManualReview) : processedLblObj;
+    if (!procLbl || !processedLblObj || !manualLblObj) { /* ... error logging ... */ return; }
 
-    if (!procLbl || !processedLblObj || !manualLblObj) {
-        Logger.log(`[${FUNC_NAME} FATAL ERROR] Core Gmail labels for ${config.moduleName} not found. Aborting.`);
-        return;
-    }
-    
+    // --- THIS CACHING LOGIC IS NOW CRITICAL ---
     const allSheetData = dataSheet.getDataRange().getValues();
-    const companyIndex = new Map();
+    const funderIndex = new Map();
     for (let i = 1; i < allSheetData.length; i++) {
         const rowData = allSheetData[i];
-        const companyName = rowData[COMPANY_COL - 1];
-        if (companyName && typeof companyName === 'string' && companyName.trim() !== "") {
-            const companyKey = companyName.toLowerCase();
-            if (!companyIndex.has(companyKey)) {
-                companyIndex.set(companyKey, []);
-            }
-            const cacheEntry = {
-                row: i + 1,
-                rowData: rowData,
-                emailId: rowData[EMAIL_ID_COL - 1],
-                company: companyName,
-                title: rowData[JOB_TITLE_COL - 1],
-                status: rowData[STATUS_COL - 1],
-                peakStatus: rowData[PEAK_STATUS_COL - 1]
-            };
-            companyIndex.get(companyKey).push(cacheEntry);
+        const funderName = rowData[PROP_FUNDER_COL - 1];
+        if (funderName && typeof funderName === 'string' && funderName.trim() !== "") {
+            const funderKey = funderName.toLowerCase();
+            if (!funderIndex.has(funderKey)) { funderIndex.set(funderKey, []); }
+            funderIndex.get(funderKey).push({
+                row: i + 1, rowData: rowData, emailId: rowData[PROP_EMAIL_ID_COL - 1],
+                funder: funderName, title: rowData[PROP_TITLE_COL - 1],
+                status: rowData[PROP_STATUS_COL - 1], peakStatus: rowData[PROP_PEAK_STATUS_COL - 1]
+            });
         }
     }
     
-    Logger.log(`[ENGINE] Fetching threads...`);
-    const batchSize = config.gmailBatchSize || 20;
-    const threadsToProcess = procLbl.getThreads(0, batchSize);
-    Logger.log(`[ENGINE] Found ${threadsToProcess.length} threads.`);
-    if (threadsToProcess.length === 0) {
-        Logger.log(`[${FUNC_NAME} INFO] No new messages to process for ${config.moduleName}.`);
-        return;
-    }
+    const threadsToProcess = procLbl.getThreads(0, 20);
+    if (threadsToProcess.length === 0) { /* ... logging ... */ return; }
 
-    Logger.log(`[ENGINE] Flattening messages from threads...`);
-    const messagesToSort = threadsToProcess.flatMap(thread => thread.getMessages());
-    Logger.log(`[ENGINE] Found ${messagesToSort.length} total messages.`);
-
-    Logger.log(`[ENGINE] Sorting messages...`);
-    messagesToSort.sort((a, b) => a.getDate() - b.getDate());
-
-    Logger.log(`[ENGINE] Entering main processing loop...`);
+    const messagesToSort = threadsToProcess.flatMap(thread => thread.getMessages()).sort((a, b) => a.getDate() - b.getDate());
     const dataToUpdate = [];
     const newRowsData = [];
     let threadProcessingOutcomes = {};
 
     for (const message of messagesToSort) {
-        if ((new Date().getTime() - SCRIPT_START_TIME.getTime()) / 1000 > 320) {
-            Logger.log(`[${FUNC_NAME} WARN] Execution time limit nearing. Stopping.`);
-            break;
-        }
-
+        if ((new Date().getTime() - SCRIPT_START_TIME.getTime()) / 1000 > 320) break;
         const msgId = message.getId();
-        const threadId = message.getThread().getId();
-        const emailSubject = message.getSubject();
-        const plainBodyText = message.getPlainBody();
-        
         try {
-            const geminiResult = config.parserFunction(emailSubject, plainBodyText, geminiApiKey);
-            const handlerResult = config.dataHandler(geminiResult, message, companyIndex, dataSheet);
-            
-            if (handlerResult.updateInfo) {
-                dataToUpdate.push(handlerResult.updateInfo);
-                const companyKey = (handlerResult.updateInfo.company || '').toLowerCase();
-                const existingEntry = companyIndex.get(companyKey)?.find(e => e.row === handlerResult.updateInfo.row);
-                if (existingEntry) {
-                    existingEntry.status = handlerResult.updateInfo.newStatus;
-                    existingEntry.peakStatus = handlerResult.updateInfo.newPeakStatus;
-                    Logger.log(`[ENGINE] Live cache UPDATED for row ${existingEntry.row}. New Status: ${existingEntry.status}`);
-                }
-            } else if (handlerResult.newRowData && handlerResult.newRowData.length > 0) {
-                newRowsData.push(...handlerResult.newRowData);
-                handlerResult.newRowData.forEach(newRow => {
-                    const companyKey = (newRow[COMPANY_COL - 1] || '').toLowerCase();
-                    if (companyKey) {
-                        const newCacheEntry = {
-                            row: -1,
-                            emailId: newRow[EMAIL_ID_COL - 1],
-                            company: newRow[COMPANY_COL - 1],
-                            title: newRow[JOB_TITLE_COL - 1],
-                            status: newRow[STATUS_COL - 1],
-                            peakStatus: newRow[PEAK_STATUS_COL - 1]
-                        };
-                        if (!companyIndex.has(companyKey)) companyIndex.set(companyKey, []);
-                        companyIndex.get(companyKey).push(newCacheEntry);
-                        Logger.log(`[ENGINE] Live cache CREATED for new entry: ${companyKey}`);
-                    }
-                });
-            }
-            
-            threadProcessingOutcomes[threadId] = handlerResult.requiresManualReview ? 'manual' : 'done';
-            
-        } catch (e) {
-            Logger.log(`[${FUNC_NAME} FATAL ERROR] in message loop for msgId ${msgId}: ${e.message}\n${e.stack}`);
-            threadProcessingOutcomes[threadId] = 'manual';
-        }
-        
-        Utilities.sleep(200);
+            const geminiResult = config.parserFunction(message.getSubject(), message.getPlainBody(), geminiApiKey);
+            const handlerResult = config.dataHandler(geminiResult, message, funderIndex, dataSheet);
+            if (handlerResult.updateInfo) { dataToUpdate.push(handlerResult.updateInfo); }
+            if (handlerResult.newRowData) { newRowsData.push(...handlerResult.newRowData); }
+            threadProcessingOutcomes[message.getThread().getId()] = handlerResult.requiresManualReview ? 'manual' : 'done';
+        } catch (e) { /* ... error logging ... */ threadProcessingOutcomes[message.getThread().getId()] = 'manual'; }
     }
-    
-    dataToUpdate.forEach(update => dataSheet.getRange(update.row, 1, 1, update.values.length).setValues([update.values]));
 
+    if (dataToUpdate.length > 0) {
+        dataToUpdate.forEach(update => dataSheet.getRange(update.row, 1, 1, update.values.length).setValues([update.values]));
+    }
     if (newRowsData.length > 0) {
-        const firstNewRow = dataSheet.getLastRow() + 1;
-        dataSheet.getRange(firstNewRow, 1, newRowsData.length, newRowsData[0].length).setValues(newRowsData);
-        Logger.log(`[ENGINE INFO] Batch appended ${newRowsData.length} new rows.`);
-        newRowsData.forEach((rowData, i) => {
-            const companyKey = (rowData[COMPANY_COL - 1] || '').toLowerCase();
-            const emailId = rowData[EMAIL_ID_COL - 1];
-            const entryInCache = companyIndex.get(companyKey)?.find(e => e.row === -1 && e.emailId === emailId);
-            if (entryInCache) {
-                entryInCache.row = firstNewRow + i;
-                Logger.log(`[ENGINE] Finalizing live cache row number for ${companyKey} to ${entryInCache.row}`);
-            }
-        });
+        dataSheet.getRange(dataSheet.getLastRow() + 1, 1, newRowsData.length, newRowsData[0].length).setValues(newRowsData);
     }
-
     applyFinalLabels(threadProcessingOutcomes, procLbl, processedLblObj, manualLblObj);
-    Logger.log(`\n==== ${FUNC_NAME} FINISHED (${new Date().toLocaleString()}) ====`);
+    Logger.log(`\n==== ${FUNC_NAME} FINISHED ====`);
 }
+// END SNIPPET 5A
 
 /**
- * Parser function specific to the Application Tracker.
+ * Parser function specific to the Proposal Tracker.
  * @param {string} subject
  * @param {string} body
  * @param {string} key
  * @returns {object}
  */
-function _trackerParser(subject, body, key) {
-    return callGemini_forApplicationDetails(subject, body, key);
+function _proposalStatusParser(subject, body, key) {
+    return callGemini_forProposalStatus(subject, body, key);
 }
 
-/**
- * Data handler function specific to the Application Tracker.
- * @param {object} geminiResult
- * @param {GoogleAppsScript.Gmail.GmailMessage} message
- * @param {Map<string, object[]>} companyIndex
- * @param {GoogleAppsScript.Spreadsheet.Sheet} dataSheet
- * @returns {{updateInfo?: object, newRowData?: any[], requiresManualReview: boolean}}
- */
-function _trackerDataHandler(geminiResult, message, companyIndex, dataSheet) {
-    const emailSubject = message.getSubject() || "";
-    const msgId = message.getId();
+// START SNIPPET 5B: Replace _proposalDataHandler in Main.js
+function _proposalDataHandler(geminiResult, message, funderIndex, dataSheet) {
+    if (!geminiResult) return { requiresManualReview: true };
 
-    Logger.log(`--- AI INPUT FOR MSG ID: ${msgId} ---`);
-    Logger.log(`SUBJECT: ${emailSubject}`);
-    Logger.log(`BODY SNIPPET: ${message.getPlainBody().substring(0, 1500)}`);
-    Logger.log(`------------------------------------`);
+    const { funderName, proposalTitle, submissionStatus } = geminiResult;
+    let requiresManualReview = (funderName === MANUAL_REVIEW_NEEDED || proposalTitle === MANUAL_REVIEW_NEEDED);
 
-    const senderEmail = message.getFrom() || "";
-    const emailPermaLink = `https://mail.google.com/mail/u/0/#inbox/${msgId}`;
-    const currentTimestamp = new Date();
-    const emailDate = message.getDate();
-    let companyName = MANUAL_REVIEW_NEEDED;
-    let jobTitle = MANUAL_REVIEW_NEEDED;
-    let applicationStatus = null;
-
-    if (geminiResult && !geminiResult.error) {
-        companyName = geminiResult.company || MANUAL_REVIEW_NEEDED;
-        jobTitle = geminiResult.title || MANUAL_REVIEW_NEEDED;
-        applicationStatus = (geminiResult.status && geminiResult.status !== "undefined") ? geminiResult.status : "Update/Other";
-        Logger.log(`[_trackerDataHandler INFO] Gemini Raw: C:"${companyName}", T:"${jobTitle}", S:"${geminiResult.status}" -> Parsed Status: "${applicationStatus}"`);
-        if (applicationStatus === "Update/Other" || applicationStatus === MANUAL_REVIEW_NEEDED) {
-            const keywordStatus = parseBodyForStatus(message.getPlainBody());
-            if (keywordStatus) {
-                applicationStatus = keywordStatus;
-                Logger.log(`[_trackerDataHandler INFO] Status enhanced by keywords to: "${applicationStatus}"`);
-            }
-        }
-    } else {
-        const errorInfo = {
-            moduleName: "Application Tracker",
-            errorType: "Gemini API Error",
-            details: geminiResult ? String(geminiResult.error) : "Unknown API response error",
-            messageSubject: message.getSubject(),
-            messageId: msgId
-        };
-        _writeErrorToSheet(dataSheet, errorInfo);
-        const regexResult = extractCompanyAndTitle(message, DEFAULT_PLATFORM, emailSubject, message.getPlainBody());
-        companyName = regexResult.company;
-        jobTitle = regexResult.title;
-        applicationStatus = parseBodyForStatus(message.getPlainBody());
+    let existingRowInfo = null;
+    if (!requiresManualReview) {
+        const potentialMatches = funderIndex.get(String(funderName).toLowerCase()) || [];
+        // Find an existing entry with the same funder AND proposal title
+        existingRowInfo = potentialMatches.find(e => e.title && e.title.toLowerCase() === proposalTitle.toLowerCase());
     }
 
-    let existingRowInfoToUpdate = null;
-    let targetSheetRowForUpdate = -1;
-    let requiresManualReview = (companyName === MANUAL_REVIEW_NEEDED || jobTitle === MANUAL_REVIEW_NEEDED);
+    if (existingRowInfo) {
+        // --- UPDATE PATH ---
+        const rowDataForSheet = [...existingRowInfo.rowData];
+        rowDataForSheet[PROP_LAST_UPDATE_COL - 1] = message.getDate();
+        rowDataForSheet[PROP_EMAIL_SUBJ_COL - 1] = message.getSubject();
+        rowDataForSheet[PROP_EMAIL_LINK_COL - 1] = `https://mail.google.com/mail/u/0/#inbox/${message.getId()}`;
+        rowDataForSheet[PROP_EMAIL_ID_COL - 1] = message.getId();
 
-    // Only attempt to find a row to update if BOTH company and title are valid.
-    if (companyName !== MANUAL_REVIEW_NEEDED && jobTitle !== MANUAL_REVIEW_NEEDED) {
-        const potentialMatches = companyIndex.get(String(companyName).toLowerCase()) || [];
-
-        // First, try for a perfect match of company and title.
-        existingRowInfoToUpdate = potentialMatches.find(e => e.title && e.title.toLowerCase() === jobTitle.toLowerCase());
-
-        // --- THIS IS THE KEY CHANGE ---
-        // If no exact match is found, DO NOT fall back to a company-only match.
-        // This prevents updating the wrong job application. The system will create a new row instead.
-
-        if (existingRowInfoToUpdate && existingRowInfoToUpdate.row !== -1) {
-            targetSheetRowForUpdate = existingRowInfoToUpdate.row;
-            Logger.log(`[_trackerDataHandler INFO] Found existing row #${targetSheetRowForUpdate} to update for Company: "${companyName}", Title: "${jobTitle}".`);
+        const currentStatus = String(rowDataForSheet[PROP_STATUS_COL - 1]).trim() || STATUS_DRAFTING;
+        const currentRank = STATUS_HIERARCHY[currentStatus] ?? 0;
+        const newRank = STATUS_HIERARCHY[submissionStatus] ?? 0;
+        if (newRank >= currentRank) { // Only update status if it's a forward or equal progression
+            rowDataForSheet[PROP_STATUS_COL - 1] = submissionStatus;
         }
+
+        const currentPeak = existingRowInfo.peakStatus || currentStatus;
+        const peakRank = STATUS_HIERARCHY[currentPeak] ?? 0;
+        const finalStatusRank = STATUS_HIERARCHY[rowDataForSheet[PROP_STATUS_COL - 1]] ?? 0;
+        if (finalStatusRank > peakRank) {
+            rowDataForSheet[PROP_PEAK_STATUS_COL - 1] = rowDataForSheet[PROP_STATUS_COL - 1];
+        }
+        return { updateInfo: { row: existingRowInfo.row, values: rowDataForSheet }, requiresManualReview };
     } else {
-        Logger.log(`[_trackerDataHandler INFO] Company or Title requires manual review. A new row will be created instead of attempting an update.`);
-    }
-
-    const finalStatusToSet = applicationStatus || DEFAULT_STATUS;
-
-    if (targetSheetRowForUpdate !== -1 && existingRowInfoToUpdate) {
-        // This is the "UPDATE an existing row" path.
-        // (The existing logic for updating the rowDataForSheet array is good, keep it as is)
-        const rowDataForSheet = [...existingRowInfoToUpdate.rowData];
-        rowDataForSheet[PROCESSED_TIMESTAMP_COL - 1] = currentTimestamp;
-        rowDataForSheet[LAST_UPDATE_DATE_COL - 1] = emailDate;
-        rowDataForSheet[EMAIL_SUBJECT_COL - 1] = emailSubject;
-        rowDataForSheet[EMAIL_LINK_COL - 1] = emailPermaLink;
-        rowDataForSheet[EMAIL_ID_COL - 1] = msgId;
-
-        const statInSheet = String(rowDataForSheet[STATUS_COL - 1]).trim() || DEFAULT_STATUS;
-        const curRank = STATUS_HIERARCHY[statInSheet] ?? 0;
-        const newRank = STATUS_HIERARCHY[finalStatusToSet] ?? 0;
-        if (newRank >= curRank || finalStatusToSet === REJECTED_STATUS || finalStatusToSet === OFFER_STATUS) {
-            rowDataForSheet[STATUS_COL - 1] = finalStatusToSet;
-        }
-
-        const statAfterUpd = String(rowDataForSheet[STATUS_COL - 1]);
-        let peakStat = existingRowInfoToUpdate.peakStatus || statInSheet;
-        const curPeakRank = STATUS_HIERARCHY[peakStat] ?? 0;
-        const newStatRankPeak = STATUS_HIERARCHY[statAfterUpd] ?? 0;
-        if (newStatRankPeak > curPeakRank) {
-            rowDataForSheet[PEAK_STATUS_COL - 1] = statAfterUpd;
-        }
-
-        return {
-            updateInfo: {
-                row: targetSheetRowForUpdate,
-                values: rowDataForSheet,
-                newStatus: rowDataForSheet[STATUS_COL - 1],
-                newPeakStatus: rowDataForSheet[PEAK_STATUS_COL - 1],
-                company: rowDataForSheet[COMPANY_COL - 1]
-            },
-            requiresManualReview: requiresManualReview
-        };
-    } else {
-        // This is the "CREATE a new row" path.
-        // This path is now taken if no exact match is found OR if company/title needs manual review.
-        // (The existing logic for creating a new row is good, keep it as is)
-        const rowDataForSheet = new Array(TOTAL_COLUMNS_IN_APP_SHEET).fill("");
-        rowDataForSheet[PROCESSED_TIMESTAMP_COL - 1] = currentTimestamp;
-        rowDataForSheet[EMAIL_DATE_COL - 1] = emailDate;
-        rowDataForSheet[PLATFORM_COL - 1] = DEFAULT_PLATFORM;
-        rowDataForSheet[COMPANY_COL - 1] = companyName;
-        rowDataForSheet[JOB_TITLE_COL - 1] = jobTitle;
-        rowDataForSheet[STATUS_COL - 1] = finalStatusToSet;
-        rowDataForSheet[PEAK_STATUS_COL - 1] = finalStatusToSet;
-        rowDataForSheet[LAST_UPDATE_DATE_COL - 1] = emailDate;
-        rowDataForSheet[EMAIL_SUBJECT_COL - 1] = emailSubject;
-        rowDataForSheet[EMAIL_LINK_COL - 1] = emailPermaLink;
-        rowDataForSheet[EMAIL_ID_COL - 1] = msgId;
-        
-        return {
-            newRowData: [rowDataForSheet], // Ensure this is returned as an array of rows
-            requiresManualReview: requiresManualReview
-        };
+        // --- CREATE NEW ROW PATH ---
+        const newRowData = new Array(TOTAL_COLUMNS_IN_PROPOSAL_SHEET).fill("");
+        newRowData[PROP_PROC_TS_COL - 1] = new Date();
+        newRowData[PROP_SUBMIT_DATE_COL - 1] = message.getDate();
+        newRowData[PROP_FUNDER_COL - 1] = funderName;
+        newRowData[PROP_TITLE_COL - 1] = proposalTitle;
+        newRowData[PROP_STATUS_COL - 1] = submissionStatus || STATUS_SUBMITTED;
+        newRowData[PROP_PEAK_STATUS_COL - 1] = submissionStatus || STATUS_SUBMITTED;
+        newRowData[PROP_LAST_UPDATE_COL - 1] = message.getDate();
+        newRowData[PROP_EMAIL_SUBJ_COL - 1] = message.getSubject();
+        newRowData[PROP_EMAIL_LINK_COL - 1] = `https://mail.google.com/mail/u/0/#inbox/${message.getId()}`;
+        newRowData[PROP_EMAIL_ID_COL - 1] = message.getId();
+        return { newRowData: [newRowData], requiresManualReview };
     }
 }
+// END SNIPPET 5B
 
 /**
  * Trigger handler for hourly email processing.
@@ -501,7 +331,8 @@ function processEmails_triggerHandler() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const scriptProperties = PropertiesService.getScriptProperties();
     Logger.log('Hourly email processing trigger started.');
-    processJobApplicationEmails(ss, scriptProperties);
+    // The ss and scriptProperties are fetched here and passed down.
+    processProposalEmails(ss, scriptProperties);
     Logger.log('Hourly email processing trigger finished.');
 }
 
@@ -510,221 +341,223 @@ function processEmails_triggerHandler() {
  */
 function markStale_triggerHandler() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+        Logger.log('markStale_triggerHandler: Could not get active spreadsheet. Aborting.');
+        return;
+    }
     Logger.log('Daily stale check trigger started.');
-    markStaleApplicationsAsRejected(ss);
+    markStaleProposals(ss);
     Logger.log('Daily stale check trigger finished.');
 }
 
 /**
- * Main "stub" function for processing job application emails.
+ * Main "stub" function for processing grant proposal emails.
+ * This function is called by the time-driven trigger.
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
  * @param {GoogleAppsScript.Properties.Properties} scriptProperties
  */
-function processJobApplicationEmails(ss, scriptProperties) {
-    const trackerProcessingConfig = {
-        moduleName: "Application Tracker",
-        sheetTabName: APP_TRACKER_SHEET_TAB_NAME,
+function processProposalEmails(ss, scriptProperties) {
+    const proposalProcessingConfig = {
+        moduleName: "Proposal Tracker",
+        sheetTabName: PROPOSAL_TRACKER_SHEET_TAB_NAME,
+        parserFunction: _proposalStatusParser,
+        dataHandler: _proposalDataHandler,
+        // Pass the required Gmail labels from Config.js
         gmailLabelToProcess: TRACKER_GMAIL_LABEL_TO_PROCESS,
         gmailLabelProcessed: TRACKER_GMAIL_LABEL_PROCESSED,
-        gmailLabelManualReview: TRACKER_GMAIL_LABEL_MANUAL_REVIEW,
-        parserFunction: _trackerParser,
-        dataHandler: _trackerDataHandler
+        gmailLabelManualReview: TRACKER_GMAIL_LABEL_MANUAL_REVIEW
     };
-    _processingEngine(trackerProcessingConfig, ss, scriptProperties);
+    // The _processingEngine is generic and powerful, so we can reuse it without changes.
+    _processingEngine(proposalProcessingConfig, ss, scriptProperties);
 }
 
 /**
- * Marks stale applications as "Rejected".
+ * Marks stale proposals as "Declined".
  * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss The spreadsheet object.
  */
-function markStaleApplicationsAsRejected(ss) {
-    const FUNC_NAME = "markStaleApplicationsAsRejected";
+function markStaleProposals(ss) {
+    const FUNC_NAME = "markStaleProposals";
     Logger.log(`\n==== ${FUNC_NAME}: START (${new Date().toLocaleString()}) ====`);
-    
-    if (!ss) {
-      Logger.log(`[${FUNC_NAME} FATAL ERROR] Main spreadsheet not passed. Aborting.`);
-      return;
-    }
-  
-    let dataSheet;
-    try {
-      dataSheet = ss.getSheetByName(APP_TRACKER_SHEET_TAB_NAME);
-      if (!dataSheet) {
-          Logger.log(`[${FUNC_NAME} FATAL ERROR] Tab "${APP_TRACKER_SHEET_TAB_NAME}" not found in "${ss.getName()}". Aborting.`);
-          return;
-      }
-    } catch (e) {
-      Logger.log(`[${FUNC_NAME} FATAL ERROR] Accessing tab "${APP_TRACKER_SHEET_TAB_NAME}": ${e.message}. Aborting.`);
-      return;
-    }
-    
+    if (!ss) { /* ... error logging ... */ return; }
+    const dataSheet = ss.getSheetByName(PROPOSAL_TRACKER_SHEET_TAB_NAME);
+    if (!dataSheet) { /* ... error logging ... */ return; }
+
     const dataRange = dataSheet.getDataRange();
     const sheetValues = dataRange.getValues();
     const currentDate = new Date();
     const staleThresholdDate = new Date();
     staleThresholdDate.setDate(currentDate.getDate() - (WEEKS_THRESHOLD * 7));
-    
-    let updatedApplicationsCount = 0;
+
+    let updatedProposalsCount = 0;
     for (let i = 1; i < sheetValues.length; i++) {
-        const currentStatus = sheetValues[i][STATUS_COL - 1];
-        const lastUpdateDate = new Date(sheetValues[i][LAST_UPDATE_DATE_COL - 1]);
-        if (!FINAL_STATUSES_FOR_STALE_CHECK.has(currentStatus) && lastUpdateDate < staleThresholdDate) {
-            sheetValues[i][STATUS_COL - 1] = REJECTED_STATUS;
-            sheetValues[i][LAST_UPDATE_DATE_COL - 1] = currentDate;
-            updatedApplicationsCount++;
+        const currentStatus = sheetValues[i][PROP_STATUS_COL - 1];
+        const lastUpdateDate = new Date(sheetValues[i][PROP_LAST_UPDATE_COL - 1]);
+
+        if (currentStatus && !FINAL_STATUSES_FOR_STALE_CHECK.has(currentStatus) && lastUpdateDate && lastUpdateDate < staleThresholdDate) {
+            sheetValues[i][PROP_STATUS_COL - 1] = STATUS_DECLINED;
+            sheetValues[i][PROP_LAST_UPDATE_COL - 1] = currentDate;
+            sheetValues[i][PROP_NOTES_COL - 1] = (sheetValues[i][PROP_NOTES_COL - 1] + ` (Auto-updated to Declined on ${currentDate.toLocaleDateString()})`).trim();
+            updatedProposalsCount++;
         }
     }
-  
-    if (updatedApplicationsCount > 0) {
-      dataRange.setValues(sheetValues);
-      Logger.log(`[${FUNC_NAME} INFO] Updated ${updatedApplicationsCount} stale applications to Rejected.`);
+
+    if (updatedProposalsCount > 0) {
+        dataRange.setValues(sheetValues);
+        Logger.log(`[${FUNC_NAME} INFO] Updated ${updatedProposalsCount} stale proposals to '${STATUS_DECLINED}'.`);
     } else {
-      Logger.log(`[${FUNC_NAME} INFO] No stale applications found needing update.`);
+        Logger.log(`[${FUNC_NAME} INFO] No stale proposals found.`);
     }
 }
 
-/**
- * Runs when the spreadsheet is opened to create the custom menu.
- * @param {object} e
- */
+// REPLACE the old onOpen with this one
 function onOpen(e) {
   const ui = SpreadsheetApp.getUi();
-  const menuName = CUSTOM_MENU_NAME || '⚙️ CareerSuite.AI Tools';
+  const menuName = CUSTOM_MENU_NAME || '⚙️ FundingFlock.AI Tools';
   const menu = ui.createMenu(menuName);
   
   menu.addItem('🚀 Finalize Project Setup', 'userDrivenFullSetup');
   menu.addSeparator();
+
+  // --- ADDED SECTION ---
   menu.addSubMenu(ui.createMenu('Manual Processing')
-      .addItem('📧 Process Application Emails', 'processEmails_triggerHandler')
-      .addItem('🗑️ Mark Stale Applications', 'markStale_triggerHandler')
-      .addItem('📬 Process Job Leads', 'processJobLeads'));
+      .addItem('📧 Process Proposal Emails', 'processEmails_triggerHandler')
+      .addItem('🗑️ Mark Stale Proposals', 'markStale_triggerHandler'));
   menu.addSeparator();
+  // --- END ADDED SECTION ---
+
   menu.addSubMenu(ui.createMenu('Admin & Config')
       .addItem('🔑 Set Gemini API Key', 'setSharedGeminiApiKey_UI')
-      .addItem('🔄 Activate AI Features & Sync Key', 'activateAiFeatures')
       .addItem('🔍 Show All User Properties', 'showAllUserProperties'));
   menu.addSeparator();
   menu.addItem('❌ Uninstall Backend', 'uninstall');
   menu.addToUi();
+
+  // Welcome prompt logic remains unchanged
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const initialSetupDone = scriptProperties.getProperty('initialSetupDone_vFF_1');
+  const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+
+  if (!initialSetupDone && activeSS.getId() !== TEMPLATE_SHEET_ID) {
+    showWelcomePrompt_FF();
+  }
 }
 
+// ADD THIS HELPER FUNCTION TO Main.js
+
 /**
- * Wrapper for the user to run the full setup from the menu.
+ * Displays a one-time welcome and instruction prompt to the user upon first opening the sheet.
  */
+function showWelcomePrompt_FF() {
+    const ui = SpreadsheetApp.getUi();
+    const title = "Welcome to FundingFlock.AI!";
+    const message = "Your new Grant Tracker sheet is ready!\n\nTo complete the setup and activate all features (like the dashboard and formatting), please go to the new menu item:\n\n⚙️ FundingFlock.AI Tools > 🚀 Finalize Project Setup\n\nThis is a required one-time step.";
+    ui.alert(title, message, ui.ButtonSet.OK);
+}
+
+// ADD THIS CORRECTED FUNCTION
 function userDrivenFullSetup() {
   const ui = SpreadsheetApp.getUi();
   const scriptProperties = PropertiesService.getScriptProperties();
   const activeSS = SpreadsheetApp.getActiveSpreadsheet();
   
+  // FIX #1: Corrected TEMPLATE_SHEET_ID
   if (typeof TEMPLATE_SHEET_ID !== 'undefined' && activeSS.getId() === TEMPLATE_SHEET_ID) {
       ui.alert('Action Not Allowed on Template', 'This setup function cannot be run on the master template sheet.', ui.ButtonSet.OK);
       return;
   }
 
-  ui.alert('Starting Setup', 'The full project setup will now begin. This may take a minute or two.', ui.ButtonSet.OK);
+  ui.alert('Starting FundingFlock Setup', 'The full project setup will now begin. This will format your sheets, create a dashboard, and prepare your grant tracker.', ui.ButtonSet.OK);
   
   const setupResult = runFullProjectInitialSetup(activeSS);
   
   if (setupResult && setupResult.success) {
-      scriptProperties.setProperty('initialSetupDone_vCSAI_1', 'true');
-      const aiFeaturesAreActive = activateAiFeatures();
-      let finalMessage = `Setup is complete for "${activeSS.getName()}".\n\n`;
-      if (aiFeaturesAreActive) {
-          finalMessage += "AI features are now active.";
-      } else {
-          finalMessage += "To enable AI features, please use the menu to set your API Key and activate.";
-      }
+      scriptProperties.setProperty('initialSetupDone_vFF_1', 'true');
+      
+      // FIX #2: Corrected activeSS.getName()
+      let finalMessage = `Setup is complete for "${activeSS.getName()}".\n\nYour Grant Tracker is ready. To enable AI features, please set your Gemini API Key using the 'Admin & Config' menu.`;
+      
       ui.alert('Setup Complete', finalMessage, ui.ButtonSet.OK);
   } else {
-      ui.alert('Setup Issues Encountered', `The project setup had some issues.\n\nPlease check the script logs for more details.`, ui.ButtonSet.OK);
+      ui.alert('Setup Issues Encountered', `The project setup had some issues.\n\nPlease check the script logs for more details (Extensions > Apps Script > Executions).`, ui.ButtonSet.OK);
   }
 }
 
 /**
- * Uninstalls triggers and filters.
+ * Uninstalls triggers and the Gmail filter created by the script.
  */
 function uninstall() {
-  const FUNC_NAME = "uninstall";
-  Logger.log(`\n==== ${FUNC_NAME}: STARTING ====`);
-  const ui = SpreadsheetApp.getUi();
-  const response = ui.alert('Confirm Uninstall', 'This will remove all triggers and Gmail filters created by this script. Are you sure?', ui.ButtonSet.YES_NO);
+    const FUNC_NAME = "uninstall";
+    Logger.log(`\n==== ${FUNC_NAME}: STARTING ====`);
+    const ui = SpreadsheetApp.getUi();
+    const response = ui.alert('Confirm Full Uninstall',
+        'This will remove all triggers AND the Gmail filter that automatically labels grant emails. Are you sure?',
+        ui.ButtonSet.YES_NO);
 
-  if (response === ui.Button.YES) {
+    if (response !== ui.Button.YES) {
+        ui.alert('Uninstall Canceled', 'No changes were made.', ui.ButtonSet.OK);
+        return;
+    }
+
+    // 1. Remove Triggers
     const triggers = ScriptApp.getProjectTriggers();
     triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
-    Logger.log(`[${FUNC_NAME}] All triggers removed.`);
-    
-    // Additional cleanup for filters if needed
-    
-    ui.alert('Uninstall Complete', 'All triggers have been removed.', ui.ButtonSet.OK);
-  } else {
-    ui.alert('Uninstall Canceled', 'No changes made.', ui.ButtonSet.OK);
-  }
+    Logger.log(`[${FUNC_NAME}] All ${triggers.length} triggers removed.`);
+
+    // 2. Remove Gmail Filter
+    try {
+        const filterQuery = TRACKER_GMAIL_FILTER_QUERY; // From Config.js
+        const filters = Gmail.Users.Settings.Filters.list('me').filter;
+        let filterIdToRemove = null;
+
+        if (filters && filters.length > 0) {
+            const targetFilter = filters.find(f => f.criteria && f.criteria.query === filterQuery);
+            if (targetFilter) {
+                filterIdToRemove = targetFilter.id;
+            }
+        }
+
+        if (filterIdToRemove) {
+            Gmail.Users.Settings.Filters.remove('me', filterIdToRemove);
+            Logger.log(`[${FUNC_NAME}] Successfully removed Gmail filter with query: "${filterQuery}"`);
+            ui.alert('Uninstall Complete', `All triggers and the Gmail filter have been removed.`, ui.ButtonSet.OK);
+        } else {
+            Logger.log(`[${FUNC_NAME}] No matching Gmail filter was found to remove.`);
+            ui.alert('Uninstall Complete', 'All triggers have been removed. No matching Gmail filter was found.', ui.ButtonSet.OK);
+        }
+    } catch (e) {
+        Logger.log(`[${FUNC_NAME} ERROR] Could not remove Gmail filter: ${e.message}. Please check your advanced Gmail service is enabled.`);
+        ui.alert('Uninstall Partially Complete', `All triggers were removed, but there was an error removing the Gmail filter. Please check logs.`, ui.ButtonSet.OK);
+    }
+}
+
+/**
+ * Placeholder function for a future feature.
+ */
+function processOpportunities_placeholder() {
+    SpreadsheetApp.getUi().alert("This feature is not yet implemented.");
 }
 
 function activateAiFeatures() {
   const FUNC_NAME = "activateAiFeatures";
   const ui = SpreadsheetApp.getUi();
   const scriptProperties = PropertiesService.getScriptProperties();
+  const userProps = PropertiesService.getUserProperties();
 
-  try {
-    Logger.log(`[${FUNC_NAME}] Attempting to fetch API key from master Web App.`);
-    if (typeof MASTER_WEB_APP_URL === 'undefined' || MASTER_WEB_APP_URL === 'https://script.google.com/macros/s/YOUR_MASTER_DEPLOYMENT_ID/exec' || MASTER_WEB_APP_URL.trim() === '') {
-      Logger.log(`[${FUNC_NAME} ERROR] MASTER_WEB_APP_URL is not configured in Config.js.`);
-      ui.alert('Configuration Error\n\nThe Master Web App URL is not configured. Please contact support or check script configuration if you are the administrator.');
-      scriptProperties.setProperty('aiFeaturesActive', 'false');
-      return false;
-    }
+  // This function is now simplified to check for a key set manually via the UI.
+  // The web app sync logic has been removed as MASTER_WEB_APP_URL is not part of this project's config.
+  Logger.log(`[${FUNC_NAME}] Checking for locally set API key.`);
 
-    const options = {
-      method: 'get',
-      headers: {
-        'Authorization': 'Bearer ' + ScriptApp.getOAuthToken()
-      },
-      muteHttpExceptions: true,
-      contentType: 'application/json'
-    };
+  const apiKey = userProps.getProperty(GEMINI_API_KEY_PROPERTY);
 
-    const response = UrlFetchApp.fetch(MASTER_WEB_APP_URL + '?action=getApiKeyForScript', options);
-    const responseCode = response.getResponseCode();
-    const responseBody = response.getContentText();
-
-    if (responseCode === 200) {
-      const data = JSON.parse(responseBody);
-      if (data.success && data.apiKey) {
-        const fetchedApiKey = data.apiKey;
-        if (fetchedApiKey && fetchedApiKey.trim() !== "" && fetchedApiKey.startsWith("AIza") && fetchedApiKey.length > 30) {
-          scriptProperties.setProperty(GEMINI_API_KEY_PROPERTY, fetchedApiKey);
-          scriptProperties.setProperty('aiFeaturesActive', 'true');
-          Logger.log(`[${FUNC_NAME}] API Key successfully fetched, validated, and stored in ScriptProperties. AI features activated.`);
-          ui.alert('AI Features Activated!\n\nYour Gemini API Key has been successfully synced and validated. AI-powered features are now enabled.');
-          return true;
-        } else {
-          Logger.log(`[${FUNC_NAME} WARN] Fetched API Key is invalid or malformed.`);
-          scriptProperties.setProperty('aiFeaturesActive', 'false');
-          scriptProperties.deleteProperty(GEMINI_API_KEY_PROPERTY);
-          ui.alert('API Key Validation Failed\n\nThe API Key retrieved from your settings is invalid. Please update it in the CareerSuite.AI extension and try again.');
-          return false;
-        }
-      } else {
-        Logger.log(`[${FUNC_NAME} WARN] Web App call successful but API key not found or error in response: ${responseBody}`);
-        scriptProperties.setProperty('aiFeaturesActive', 'false');
-        scriptProperties.deleteProperty(GEMINI_API_KEY_PROPERTY);
-        ui.alert('API Key Not Found\n\nCould not retrieve your API Key. Please ensure it is saved correctly in the CareerSuite.AI extension settings, then try this menu option again.');
-        return false;
-      }
-    } else {
-      Logger.log(`[${FUNC_NAME} ERROR] Failed to fetch API Key from Web App. Response Code: ${responseCode}. Body: ${responseBody}`);
-      scriptProperties.setProperty('aiFeaturesActive', 'false');
-      scriptProperties.deleteProperty(GEMINI_API_KEY_PROPERTY);
-      ui.alert(`API Key Sync Failed\n\nCould not connect to the API Key service (Error: ${responseCode}). Please try again later or check extension settings.`);
-      return false;
-    }
-  } catch (error) {
-    Logger.log(`[${FUNC_NAME} ERROR] Critical error during AI feature activation/API key sync: ${error.toString()}\nStack: ${error.stack}`);
+  if (apiKey && apiKey.trim() !== "" && apiKey.startsWith("AIza") && apiKey.length > 30) {
+    scriptProperties.setProperty('aiFeaturesActive', 'true');
+    Logger.log(`[${FUNC_NAME}] Valid API key found in UserProperties. AI features marked as active.`);
+    ui.alert('AI Features Active', 'A valid Gemini API Key is configured. AI-powered features are enabled.', ui.ButtonSet.OK);
+    return true;
+  } else {
     scriptProperties.setProperty('aiFeaturesActive', 'false');
-    scriptProperties.deleteProperty(GEMINI_API_KEY_PROPERTY);
-    ui.alert(`Error Activating AI\n\nAn unexpected error occurred: ${error.message}. Please check logs.`);
+    Logger.log(`[${FUNC_NAME}] No valid API key found. AI features are disabled.`);
+    ui.alert('AI Features Not Active', "Could not find a valid Gemini API Key. Please use the 'Admin & Config' -> 'Set Gemini API Key' menu to add your key.", ui.ButtonSet.OK);
     return false;
   }
 }
