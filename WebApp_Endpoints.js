@@ -1,11 +1,11 @@
 /**
- * @file Handles authenticated GET and POST requests for the CareerSuite.AI Web App.
- * @version 2.1
+ * @file Handles authenticated GET and POST requests for the FundingFlock.AI Web App.
+ * @version 3.0 (Adapted for FundingFlock communication)
  */
 
 /**
  * Main entry point for all GET requests to the Web App.
- * It routes requests based on an 'action' parameter after validating authentication.
+ * This function's primary role is to serve the landing page after a user completes the OAuth flow.
  * @param {GoogleAppsScript.Events.DoGet} e The event parameter from the GET request.
  * @returns {GoogleAppsScript.Content.TextOutput | GoogleAppsScript.HTML.HtmlOutput} A JSON or HTML response.
  */
@@ -15,29 +15,13 @@ function doGet(e) {
     const action = e.parameter.action;
     Logger.log(`[${FUNC_NAME}] Received GET request. Action: "${action}". User: ${Session.getEffectiveUser().getEmail()}`);
 
-    // Route to the correct function based on the 'action' parameter.
-    // If an 'action' is provided, we treat it as an API call from our extension.
+    // If an action parameter exists, it's an API call we don't support via GET in this version.
     if (action) {
-      switch (action) {
-        case 'getOrCreateSheet':
-          return doGet_getOrCreateSheet(e); // Handles sheet creation/retrieval.
-
-        case 'getWeeklyApplicationData':
-          return doGet_WeeklyApplicationData(e); // Handles chart data.
-
-        case 'getApiKeyForScript':
-          return doGet_getApiKeyForScript(e); // Handles key sync for copied sheets.
-
-        default:
-          // If the action is unknown, return a clear JSON error.
-          return createJsonResponse({ success: false, error: `Unknown action: ${action}` });
-      }
+      return createJsonResponse({ success: false, error: `Unknown GET action: ${action}` });
     } else {
-      // If no action is specified, it's likely a user visiting the URL directly
-      // or the initial OAuth redirect. Show a user-friendly landing page.
+      // If no action is specified, it's the OAuth redirect. Show the user-friendly landing page.
       return createAuthLandingPage();
     }
-
   } catch (error) {
     Logger.log(`[${FUNC_NAME}] CRITICAL Unhandled Error in doGet: ${error.toString()}\nStack: ${error.stack}`);
     return createJsonResponse({ success: false, error: `An unexpected server error occurred: ${error.message}` });
@@ -45,125 +29,92 @@ function doGet(e) {
 }
 
 /**
- * Handles POST requests to the web app, primarily for saving data like the API key.
- * @param {GoogleAppsScript.Events.DoPost} e The event parameter from the POST request.
+ * Handles POST requests from the extension, which is the primary method of communication.
+ * @param {GoogleAppsScript.Events.DoPost} e The event parameter.
  * @returns {GoogleAppsScript.Content.TextOutput} A JSON response.
  */
 function doPost(e) {
   const FUNC_NAME = "WebApp_doPost";
   try {
-    // --- User & Action Identification ---
     const userEmail = Session.getEffectiveUser().getEmail();
-    Logger.log(`[${FUNC_NAME}] Received POST request from user: ${userEmail}.`);
+    Logger.log(`[${FUNC_NAME}] Received POST from ${userEmail}.`);
 
-    const action = e && e.parameter ? e.parameter.action : null;
+    const postData = JSON.parse(e.postData.contents);
+    const action = postData.action;
 
-    // === ACTION: setApiKey ===
-    if (action === 'setApiKey') {
-      Logger.log(`[${FUNC_NAME}] Routing to 'setApiKey' action.`);
-      
-      const postData = JSON.parse(e.postData.contents);
-      const apiKey = postData.apiKey;
+    switch (action) {
+      case 'createTrackerSheet':
+        Logger.log(`[${FUNC_NAME}] Action: createTrackerSheet`);
+        return handleCreateSheet(postData);
 
-      if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 35) {
-        Logger.log(`[${FUNC_NAME} ERROR] 'setApiKey' failed: Invalid API key provided.`);
-        return createJsonResponse({
-          status: 'error',
-          message: 'Invalid or missing API key provided in the request.'
-        });
-      }
+      case 'setApiKey':
+        Logger.log(`[${FUNC_NAME}] Action: setApiKey`);
+        const apiKey = postData.apiKey;
+        if (!apiKey || typeof apiKey !== 'string' || apiKey.length < 35) {
+          throw new Error('Invalid or missing API key.');
+        }
+        // GEMINI_API_KEY_PROPERTY is a global constant from Config.js
+        PropertiesService.getUserProperties().setProperty(GEMINI_API_KEY_PROPERTY, apiKey);
+        Logger.log(`[${FUNC_NAME} SUCCESS] Saved Gemini API key.`);
+        return createJsonResponse({ status: 'success', message: 'API key was successfully saved.' });
 
-      // GEMINI_API_KEY_PROPERTY is the constant from Config.gs
-      PropertiesService.getUserProperties().setProperty(GEMINI_API_KEY_PROPERTY, apiKey);
-
-      Logger.log(`[${FUNC_NAME} SUCCESS] Saved Gemini API key to UserProperties for user ${userEmail}.`);
-      return createJsonResponse({
-        status: 'success',
-        message: 'API key was successfully saved to the backend.'
-      });
+      default:
+        throw new Error(`Unknown POST action: "${action}".`);
     }
-
-    // Fallback for an unknown POST action.
-    Logger.log(`[${FUNC_NAME} WARN] An unknown POST action was requested: "${action}".`);
-    return createJsonResponse({
-      status: 'error',
-      message: 'Unknown or unsupported POST action requested.'
-    });
-
   } catch (error) {
-    // Global Error Handling for any unexpected errors.
-    Logger.log(`[${FUNC_NAME} CRITICAL ERROR] Error in doPost: ${error.toString()}\nStack: ${error.stack}`);
-    return createJsonResponse({
-      status: 'error',
-      message: `Failed to complete POST action due to a server-side error: ${error.message}`
-    });
+    Logger.log(`[${FUNC_NAME} CRITICAL ERROR] ${error.toString()}`);
+    return createJsonResponse({ status: 'error', message: `Server error: ${error.message}` });
   }
 }
 
-
 /**
- * Handles the logic for getting an existing sheet or creating a new one for the user.
- * This is the primary endpoint for the extension's "Manage Job Tracker" button.
- * @param {GoogleAppsScript.Events.DoGet} e The event parameter from the GET request.
+ * Creates a copy of the template sheet for the user. Does NOT run the full setup.
+ * @param {object} postData The parsed data from the POST request.
  * @returns {GoogleAppsScript.Content.TextOutput} A JSON response.
  */
-function doGet_getOrCreateSheet(e) {
-  const FUNC_NAME = "doGet_getOrCreateSheet";
+function handleCreateSheet(postData) {
+  const FUNC_NAME = "handleCreateSheet";
   const userEmail = Session.getEffectiveUser().getEmail();
   const userProps = PropertiesService.getUserProperties();
-  const existingSheetId = userProps.getProperty('userMjmSheetId');
-  
-  // 1. Check if a valid Sheet ID is already stored for the user.
+  const userSheetIdPropKey = 'userFundingFlockSheetId'; // Use a unique key for FF
+
+  const existingSheetId = userProps.getProperty(userSheetIdPropKey);
+
+  // 1. Check if a valid Sheet ID is already stored for this user.
   if (existingSheetId) {
     try {
       const existingSheet = SpreadsheetApp.openById(existingSheetId);
-      Logger.log(`[${FUNC_NAME}] Found existing, valid sheet for ${userEmail}: ID=${existingSheetId}`);
+      Logger.log(`[${FUNC_NAME}] Found existing, valid sheet for ${userEmail}.`);
       return createJsonResponse({
-        status: "success",
-        message: "Sheet already exists.",
+        status: 'success',
+        message: 'Sheet already exists.',
         sheetId: existingSheetId,
         sheetUrl: existingSheet.getUrl()
       });
-    } catch (openErr) {
-      Logger.log(`[${FUNC_NAME}] Stored sheet ID ${existingSheetId} was invalid or inaccessible. Clearing property and creating a new sheet. Error: ${openErr.message}`);
-      userProps.deleteProperty('userMjmSheetId');
+    } catch (e) {
+      // The stored ID was invalid (e.g., user deleted the sheet).
+      Logger.log(`[${FUNC_NAME}] Stored sheet ID was invalid. Clearing property and creating new sheet.`);
+      userProps.deleteProperty(userSheetIdPropKey);
     }
   }
 
-  // 2. If no valid ID, create a new sheet from the template.
-  Logger.log(`[${FUNC_NAME}] No valid sheet found for ${userEmail}. Creating from template...`);
-  const templateId = TEMPLATE_SHEET_ID; // From Config.gs
-  if (!templateId || templateId.length < 20) {
-    return createJsonResponse({ status: 'error', message: 'Server configuration error: Master Template Sheet ID is invalid.' });
-  }
-
-  const templateFile = DriveApp.getFileById(templateId);
-  const newFileName = `CareerSuite.AI Data`; // From Config.gs -> TARGET_SPREADSHEET_FILENAME
+  // 2. If no valid ID, create a new sheet by copying the template.
+  Logger.log(`[${FUNC_NAME}] Creating new sheet from template ID: ${TEMPLATE_SHEET_ID}`);
+  const templateFile = DriveApp.getFileById(TEMPLATE_SHEET_ID);
+  const newFileName = `${TARGET_SPREADSHEET_FILENAME} - ${userEmail}`;
   const newSheetFile = templateFile.makeCopy(newFileName);
   const newSheetId = newSheetFile.getId();
   
-  // 3. Run the full project setup on the newly created sheet.
-  const newSheet = SpreadsheetApp.openById(newSheetId);
-  // const setupResult = runFullProjectInitialSetup(newSheet); // From Main.gs // DEFERRED TO ON_OPEN
-
-  // if (!setupResult.success) { // DEFERRED TO ON_OPEN
-  //   Logger.log(`[${FUNC_NAME}] CRITICAL: Initial setup failed on new sheet ${newSheetId}.`);
-  //   // Consider deleting the failed sheet to avoid clutter: DriveApp.getFileById(newSheetId).setTrashed(true);
-  //   return createJsonResponse({
-  //     status: "error",
-  //     message: `Failed to initialize the new sheet. Please check script logs for details. Error: ${setupResult.message}`
-  //   });
-  // }
-
-  // 4. Save the new, successfully initialized sheet ID to user properties.
-  userProps.setProperty('userMjmSheetId', newSheetId);
-  Logger.log(`[${FUNC_NAME}] New sheet created and initialized for ${userEmail}. ID: ${newSheetId}`);
-
+  // 3. Store the new ID for the user.
+  userProps.setProperty(userSheetIdPropKey, newSheetId);
+  Logger.log(`[${FUNC_NAME}] Successfully created new sheet. ID: ${newSheetId}`);
+  
+  // 4. Return success message, prompting user for the next step.
   return createJsonResponse({
-    status: "success",
-    message: "Your CareerSuite.AI Data sheet was created and set up successfully!",
+    status: 'success',
+    message: 'Sheet created. Please open it and run "Finalize Project Setup" from the menu.',
     sheetId: newSheetId,
-    sheetUrl: newSheet.getUrl()
+    sheetUrl: newSheetFile.getUrl()
   });
 }
 
@@ -173,12 +124,12 @@ function doGet_getOrCreateSheet(e) {
  */
 function createAuthLandingPage() {
     const htmlOutput = `
-      <!DOCTYPE html><html><head><title>CareerSuite.AI Authorization</title>
-      <style>body { font-family: sans-serif; margin: 20px; background-color: #f0f4f8; color: #333; text-align: center; } .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: inline-block; } h1 { color: #33658A; }</style></head><body><div class="container">
-        <h1>CareerSuite.AI</h1><p>Authorization successful!</p><p>You can now close this tab and return to the extension.</p>
+      <!DOCTYPE html><html><head><title>FundingFlock.AI Authorization</title>
+      <style>body{font-family:sans-serif;margin:20px;background-color:#FFF0E5;color:#333;text-align:center;}.container{background-color:#fff;padding:30px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);display:inline-block;}h1{color:#96616B;}</style></head><body><div class="container">
+      <h1>FundingFlock.AI</h1><p>Authorization successful!</p><p>You can now close this tab and return to the extension.</p>
       </div></body></html>`;
     return HtmlService.createHtmlOutput(htmlOutput)
-      .setTitle("CareerSuite.AI Authorization")
+      .setTitle("FundingFlock.AI Authorization")
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -190,105 +141,4 @@ function createAuthLandingPage() {
 function createJsonResponse(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * Handles GET requests for aggregated weekly application data.
- * @param {GoogleAppsScript.Events.DoGet} e The event parameter from the GET request.
- * @returns {GoogleAppsScript.Content.TextOutput} A JSON response.
- */
-function doGet_WeeklyApplicationData(e) {
-  const FUNC_NAME = "doGet_WeeklyApplicationData";
-  try {
-    const userMjmSheetId = PropertiesService.getUserProperties().getProperty('userMjmSheetId');
-    if (!userMjmSheetId) {
-      return createJsonResponse({ 
-          success: false, 
-          error: "CareerSuite.AI Sheet ID not found. Please complete setup via the extension." 
-      });
-    }
-
-    let ss;
-    try {
-        ss = SpreadsheetApp.openById(userMjmSheetId);
-    } catch (sheetOpenErr) {
-        Logger.log(`[${FUNC_NAME} ERROR] Error opening sheet ID ${userMjmSheetId}: ${sheetOpenErr.message}`);
-        PropertiesService.getUserProperties().deleteProperty('userMjmSheetId');
-        return createJsonResponse({ 
-            success: false, 
-            error: `Your saved Sheet ID is no longer accessible. Please re-link your sheet.`
-        });
-    }
-    
-    const helperSheet = ss.getSheetByName(HELPER_SHEET_NAME);
-    if (!helperSheet) {
-      return createJsonResponse({ 
-          success: false, 
-          error: `Helper data sheet ("${HELPER_SHEET_NAME}") not found. Please run 'Update Dashboard Metrics' from the tools menu in your sheet.`
-      });
-    }
-
-    const headersRange = helperSheet.getRange("D1:E1").getDisplayValues();
-    if (headersRange[0][0] !== "Week Starting" || headersRange[0][1] !== "Applications") {
-        return createJsonResponse({ 
-            success: false, 
-            error: "Helper data format for weekly applications is incorrect."
-        });
-    }
-    
-    const lastDataRowInColD = helperSheet.getRange("D1:D").getValues().filter(String).length;
-    let weeklyData = [];
-
-    if (lastDataRowInColD > 1) {
-        const maxWeeksToShow = 12; // Show up to 12 weeks of data
-        const startRowForFetch = Math.max(2, lastDataRowInColD - maxWeeksToShow + 1);
-        const numRowsToFetchActual = lastDataRowInColD - startRowForFetch + 1;
-        
-        if (numRowsToFetchActual > 0) {
-            const rangeDataValues = helperSheet.getRange(startRowForFetch, 4, numRowsToFetchActual, 2).getDisplayValues();
-            rangeDataValues.forEach(row => {
-                if (row[0] && row[1]) {
-                     weeklyData.push({ weekStarting: row[0], applications: row[1] });
-                }
-            });
-        }
-    }
-    
-    Logger.log(`[${FUNC_NAME} INFO] Fetched ${weeklyData.length} weekly data points.`);
-    return createJsonResponse({ success: true, data: weeklyData });
-
-  } catch (error) {
-    Logger.log(`[${FUNC_NAME} ERROR] Error: ${error.toString()}\nStack: ${error.stack}`);
-    return createJsonResponse({ 
-        success: false, 
-        error: `Error fetching weekly application data: ${error.toString()}`
-    });
-  }
-}
-
-/**
- * Handles GET requests to retrieve the stored Gemini API key for the authenticated user.
- * @param {GoogleAppsScript.Events.DoGet} e The event parameter from the GET request.
- * @returns {GoogleAppsScript.Content.TextOutput} A JSON response containing the API key or an error.
- */
-function doGet_getApiKeyForScript(e) {
-  const FUNC_NAME = "doGet_getApiKeyForScript";
-  try {
-    const userEmail = Session.getEffectiveUser().getEmail(); 
-    Logger.log(`[${FUNC_NAME}] Request from user: ${userEmail} to retrieve API key.`);
-    
-    // GEMINI_API_KEY_PROPERTY should be globally available if defined in Config.gs
-    const apiKey = PropertiesService.getUserProperties().getProperty(GEMINI_API_KEY_PROPERTY); 
-
-    if (apiKey) {
-      Logger.log(`[${FUNC_NAME}] API Key retrieved successfully for ${userEmail}.`);
-      return createJsonResponse({ success: true, apiKey: apiKey });
-    } else {
-      Logger.log(`[${FUNC_NAME}] API Key not found for ${userEmail}.`);
-      return createJsonResponse({ success: false, error: "API Key not found. Please ensure you have saved your API key in the extension settings." });
-    }
-  } catch (error) {
-    Logger.log(`[${FUNC_NAME} ERROR] Error retrieving API key: ${error.toString()}\nStack: ${error.stack}`);
-    return createJsonResponse({ success: false, error: `Server error while retrieving API key: ${error.message}` });
-  }
 }
