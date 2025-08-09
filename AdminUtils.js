@@ -30,7 +30,7 @@ function manualTestTemplateAccess() {
  */
 function setSharedGeminiApiKey_UI() {
   const MIN_KEY_LENGTH = 35; // Minimum expected length for a Gemini API key
-  const propertyName = GEMINI_API_KEY_PROPERTY; // From Config.gs (e.g., "CAREERSUITE_GEMINI_API_KEY")
+  const propertyName = GEMINI_API_KEY_PROPERTY; // From Config.gs (e.g., "FUNDINGFLOCK_GEMINI_API_KEY")
   const userProps = PropertiesService.getUserProperties();
   const currentKey = userProps.getProperty(propertyName);
 
@@ -44,7 +44,7 @@ function setSharedGeminiApiKey_UI() {
 
   if (ui) { // --- Use SpreadsheetApp.getUi() ---
     try {
-      const initialPromptMessage = `Enter the CareerSuite.AI Gemini API Key.\nThis will be stored in UserProperties under: "${propertyName}".\n(Typically ${MIN_KEY_LENGTH}+ characters).\n${currentKey ? 'An existing key is set and will be overwritten if you enter a new one.' : 'No key is currently set.'}`;
+      const initialPromptMessage = `Enter the FundingFlock.AI Gemini API Key.\nThis will be stored in UserProperties under: "${propertyName}".\n(Typically ${MIN_KEY_LENGTH}+ characters).\n${currentKey ? 'An existing key is set and will be overwritten if you enter a new one.' : 'No key is currently set.'}`;
       const response = ui.prompt('Set Gemini API Key', initialPromptMessage, ui.ButtonSet.OK_CANCEL);
 
       if (response.getSelectedButton() == ui.Button.OK) {
@@ -66,7 +66,7 @@ function setSharedGeminiApiKey_UI() {
              return;
           }
           userProps.setProperty(propertyName, apiKey);
-          ui.alert('API Key Saved', `Gemini API Key saved successfully for CareerSuite.AI under property: "${propertyName}".`);
+          ui.alert('API Key Saved', `Gemini API Key saved successfully for FundingFlock.AI under property: "${propertyName}".`);
         } else if (apiKey) {
           let N = apiKey.length < MIN_KEY_LENGTH ? `Key too short (min ${MIN_KEY_LENGTH} chars). ` : '';
           if(!/^[a-zA-Z0-9_~-]+$/.test(apiKey)) N += `Key contains invalid characters.`;
@@ -85,7 +85,7 @@ function setSharedGeminiApiKey_UI() {
     Logger.log('[ADMIN_UTILS INFO] Attempting Browser.inputBox for API Key input.');
     try {
       const currentKeyInfo = currentKey ? "(Existing key will be overwritten)" : "(No key set)";
-      const apiKeyInput = Browser.inputBox(`Set CareerSuite.AI Gemini API Key`, `Enter Gemini API Key for property: ${propertyName}.\n(Min ${MIN_KEY_LENGTH}+ chars).\n${currentKeyInfo}`, Browser.Buttons.OK_CANCEL);
+      const apiKeyInput = Browser.inputBox(`Set FundingFlock.AI Gemini API Key`, `Enter Gemini API Key for property: ${propertyName}.\n(Min ${MIN_KEY_LENGTH}+ chars).\n${currentKeyInfo}`, Browser.Buttons.OK_CANCEL);
 
       if (apiKeyInput !== 'cancel' && apiKeyInput !== null) {
         const trimmedApiKey = apiKeyInput.trim();
@@ -116,7 +116,7 @@ function setSharedGeminiApiKey_UI() {
  */
 function showAllUserProperties() {
   const userProps = PropertiesService.getUserProperties().getProperties();
-  let logOutput = "Current UserProperties for this CareerSuite.AI script project:\n";
+  let logOutput = "Current UserProperties for this FundingFlock.AI script project:\n";
   if (Object.keys(userProps).length === 0) {
     logOutput += "  (No UserProperties are currently set for this project)\n";
   } else {
